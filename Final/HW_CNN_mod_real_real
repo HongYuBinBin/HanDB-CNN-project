@@ -1,0 +1,432 @@
+#!/user/bin/python
+#-*-coding: utf-8-*-
+
+
+
+
+import numpy as np
+from skimage import io
+from skimage.transform import resize
+import matplotlib.pyplot as plt
+import zipfile, os
+import torch
+import torchvision            
+import torch.nn as nn
+import torch.nn.functional as F
+from torch.autograd import Variable
+from sklearn.model_selection import train_test_split
+
+#from HW_CNN_dataset import Dataset
+
+import sys
+import os.path
+
+#File_NAME = sys.argv[1]
+
+#print(File_NAME)
+
+#class_num = 0
+#train_X = []
+#train_y = []
+
+
+def Dataset(File_NAME, label, class_num):          # label?
+    #class_num = 0                                                                                                             
+    train_X = []                                                                                                              
+    train_y = [] 
+    for folderName, subFolder, fileNames in os.walk('./PE92_train/'+str(File_NAME)):
+        for fileName in fileNames:
+            if fileName == '.DS_Store':
+                continue
+            fileName = './PE92_train/'+str(File_NAME)+'/'+fileName
+            fp = open(fileName, 'r+b')
+            print(fileName)
+            header = fp.read(8)
+            width = 1
+            class_num += 1
+            while(1):
+                code = int.from_bytes(fp.read(2), "big")
+                if not code:
+                    break
+                width = int.from_bytes(fp.read(1), "big") 
+                height = int.from_bytes(fp.read(1), "big")    
+                type = fp.read(1)
+                reserved = fp.read(1)
+                data = np.zeros(shape=(height, width), dtype=np.int)
+                for i in range(height):
+                    for j in range(width):
+                        data[i][j] = int.from_bytes(fp.read(1), "big")
+                resized = resize(data, (32, 32))
+                resized = resized * pow(10, 18)
+                re = []
+                for i in range(len(resized[0])):
+                    for j in range(len(resized[1])):
+                        re.append(resized[i][j])
+                train_X.append(re)
+                train_y.append(code)
+
+
+    print("class_num =", class_num)
+            
+    train_X_np = np.asarray(train_X, dtype='float32')
+    train_y_np = np.asarray(train_y, dtype='int')
+    #label = []          # label?
+
+    for id, x in enumerate(train_y_np):
+        if x in label:
+            continue
+        else:
+            label.append(x)
+    for id, x in enumerate(train_y_np):
+        train_y_np[id] = label.index(x)
+    
+    X_train, X_test, y_train, y_test = train_test_split(train_X_np, train_y_np, test_size=0.15)
+
+            
+    BATCH_SIZE = 32
+
+    torch_X_train = torch.from_numpy(X_train).type(torch.LongTensor)
+    torch_y_train = torch.from_numpy(y_train).type(torch.LongTensor) # data type is long
+
+    # create feature and targets tensor for test set.
+    torch_X_test = torch.from_numpy(X_test).type(torch.LongTensor)
+    torch_y_test = torch.from_numpy(y_test).type(torch.LongTensor) # data type is long
+
+
+    #torch_X_train = torch_X_train.view(-1, 1,28,28).float()
+    torch_X_train = torch_X_train.view(-1, 1,32,32).float()
+    #torch_X_test = torch_X_test.view(-1,1,28,28).float()
+    torch_X_test = torch_X_test.view(-1,1,32,32).float()
+    print(torch_X_train.shape)
+    print(torch_X_test.shape)
+
+    # Pytorch train and test sets
+    train = torch.utils.data.TensorDataset(torch_X_train,torch_y_train)
+    test = torch.utils.data.TensorDataset(torch_X_test,torch_y_test)
+
+    return train, test, class_num, BATCH_SIZE, label          # label?
+'''
+File_NAME_list = ['b1','b2','b3','b4','b5','b6','b7','b8','b9','ba','bb','bc','bd','be','bf','c1','c2','c3','c4','c5','c6','c7']
+
+print(File_NAME_list)
+
+for File_NAME in File_NAME_list:
+    train, test = Dataset(File_NAME)
+
+# data loader
+    train_loader = torch.utils.data.DataLoader(train, batch_size = BATCH_SIZE, shuffle = False)
+    test_loader = torch.utils.data.DataLoader(test, batch_size = BATCH_SIZE, shuffle = False)
+
+#1d로 받고 transpose 시켜서 2d로 바꿔서 입력 방법 찾아내기
+'''
+
+use_cuda = torch.cuda.is_available()
+
+
+MODEL_NAME = 'CNN2'
+DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+print("MODEL_NAME = {}, DEVICE = {}".format(MODEL_NAME, DEVICE))
+
+'''
+class CNN(nn.Module):
+    def __init__(self):
+        super(CNN, self).__init__()
+        self.conv1 = nn.Conv2d(1, 32, kernel_size=5)
+        self.conv2 = nn.Conv2d(32, 32, kernel_size=5)
+        self.conv3 = nn.Conv2d(32,64, kernel_size=5)
+        #self.fc1 = nn.Linear(3*3*64, 256)
+        self.fc1 = nn.Linear(64*21*21, 1024)
+        self.fc2 = nn.Linear(1024, 256)
+        self.fc3 = nn.Linear(256, class_num)
+
+    def forward(self, x):
+        x = F.relu(self.conv1(x))
+        #x = F.dropout(x, p=0.5, training=self.training)
+        x = F.relu(F.max_pool2d(self.conv2(x), 2))
+        x = F.dropout(x, p=0.5, training=self.training)
+        x = F.relu(F.max_pool2d(self.conv3(x),2))
+        x = F.dropout(x, p=0.5, training=self.training)
+        #print(x.shape)
+        x = x.view(-1,21*21*64 )
+        x = F.relu(self.fc1(x))
+        x = F.dropout(x, training=self.training)
+        x = F.relu(self.fc2(x))
+        x = self.fc3(x)
+        return F.log_softmax(x, dim=1)
+'''
+class_num = 94
+
+class CNN2(nn.Module):
+    def __init__(self, class_num):
+        super(CNN2, self).__init__()
+        
+        self.conv1 = nn.Sequential(
+            nn.Conv2d(1, 32, 3, padding=1),
+            #nn.BatchNorm2d(32), 
+            nn.ReLU(),
+            nn.BatchNorm2d(32),
+            nn.Conv2d(32, 32, 3, padding=1),
+            #nn.BatchNorm2d(32), 
+            nn.ReLU(),
+            nn.BatchNorm2d(32),
+            nn.Conv2d(32, 32, 3, stride=2, padding=1),
+            #nn.BatchNorm2d(32), 
+            nn.ReLU(),
+            nn.BatchNorm2d(32),
+            nn.MaxPool2d(2, 2),
+            nn.Dropout(0.25)
+        )
+        
+        self.conv2 = nn.Sequential(
+            nn.Conv2d(32, 64, 3, padding=1),
+            #nn.BatchNorm2d(64),
+            nn.ReLU(),
+            nn.BatchNorm2d(64),
+            nn.Conv2d(64, 64, 3, padding=1),
+            #nn.BatchNorm2d(64),
+            nn.ReLU(),
+            nn.BatchNorm2d(64),
+            nn.Conv2d(64, 64, 3, stride=2, padding=1),
+            #nn.BatchNorm2d(64),
+            nn.ReLU(),
+            nn.BatchNorm2d(64),
+            nn.MaxPool2d(2, 2),
+            nn.Dropout(0.25)
+        )
+        
+        self.conv3 = nn.Sequential(
+            nn.Conv2d(64, 128, 3, padding=1),
+            #nn.BatchNorm2d(128),
+            nn.ReLU(),
+            nn.BatchNorm2d(128),
+            nn.MaxPool2d(2, 2),
+            nn.Dropout(0.25)
+        )
+        
+        self.fc = nn.Sequential(
+            nn.Linear(128, class_num)
+        )
+                
+        
+    def forward(self, x):
+        x = self.conv1(x)
+        x = self.conv2(x)
+        x = self.conv3(x)
+        #print(x.shape)
+        #print(x.shape)
+        x = x.view(-1, 128)
+        x = self.fc(x)
+        return F.log_softmax(x, dim=1)
+        
+    def num_flat_features(self, x):
+        size = x.size()[1:]  # all dimensions except the batch dimension
+        num_features = 1
+        for s in size:
+            num_features *= s
+        return num_features
+        
+cnn = CNN2(class_num)
+if use_cuda:
+    cnn = cnn.cuda()
+print(cnn)
+
+
+#MODEL_NAME = 'DNN'
+#DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+#print("MODEL_NAME = {}, DEVICE = {}".format(MODEL_NAME, DEVICE))
+
+
+#normalizaion 해놓기
+#교수님 코드 비교해서 부족한 점 채워넣기
+
+
+# Model_load                                                                                         
+'''
+device = torch.device("cuda")
+#model = TheModelClass(*args, **kwargs)                                                        
+#optimizer = TheOptimizerClass(*args, **kwargs)                                                      
+checkpoint = torch.load("./model_save/model_HW_CNN.pth")
+cnn.load_state_dict(checkpoint['model_state_dict'])
+optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+#num_epochs = checkpoint['epoch']                                                                    
+loss = checkpoint['loss']
+
+model.eval()
+model.train()
+'''
+def fit(model, train_loader, class_num):
+    
+    optimizer = torch.optim.Adam(model.parameters())#,lr=0.001, betas=(0.9,0.999))
+    error = nn.CrossEntropyLoss()
+    EPOCHS = 30
+    device = torch.device("cuda")
+
+    class_num = class_num
+    #cnn = CNN2()
+    #cnn = model
+    '''
+    #model = TheModelClass(*args, **kwargs)                                                              
+    #optimizer = TheOptimizerClass(*args, **kwargs)                                                      
+    checkpoint = torch.load("./model_save/model_HW_CNN2_.pth")
+    cnn.load_state_dict(checkpoint['model_state_dict'])
+    optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+    #num_epochs = checkpoint['epoch']
+    loss = checkpoint['loss']
+    cnn.eval()
+    '''
+    cnn.train()
+    for epoch in range(EPOCHS):
+        correct = 0
+        for batch_idx, (X_batch, y_batch) in enumerate(train_loader):
+
+            X_batch, y_batch = X_batch.to(DEVICE), y_batch.to(DEVICE)
+            var_X_batch = Variable(X_batch).float()
+            var_y_batch = Variable(y_batch)
+            #if use_cuda:          # GPU 사용가능 환경이라면 Tensor를 GPU에서 사용하는 형태로 변환
+            #    var_X_batch, var_y_batch = var_X_batch.cuda(), var_y_batch.cuda()
+
+            optimizer.zero_grad()
+            output = model(var_X_batch)
+            loss = error(output, var_y_batch)
+            loss.backward()
+            optimizer.step()
+
+            # Total correct predictions
+            predicted = torch.max(output.data, 1)[1] 
+            correct += (predicted == var_y_batch).sum()
+            #print(correct)
+            if batch_idx % 50 == 0:
+                print('Epoch : {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}\t Accuracy:{:.3f}%'.format(
+                    epoch, batch_idx*len(X_batch), len(train_loader.dataset), 100.*batch_idx / len(train_loader), loss.data, float(correct*100) / float(BATCH_SIZE*(batch_idx+1))))
+
+    torch.save({
+    #'epoch': EPOCHS,
+    'model_state_dict': cnn.state_dict(),
+           'optimizer_state_dict': optimizer.state_dict(),
+           'loss': loss
+           }, "./model_save/model_HW_CNN2_2_.pth")
+
+
+def test(model):
+    acc = 0
+    for test_imgs, test_labels in test_loader:
+        #print(test_imgs.shape)                                                                                                                                     
+        test_imgs, test_labels = test_imgs.to(DEVICE), test_labels.to(DEVICE)
+        test_imgs = Variable(test_imgs).float()
+        #if use_cuda:                                                                                                                                               
+        #    test_imgs, test_labels = test_imgs.cuda(), test_labels.cuda()                                                                                          
+        output = model(test_imgs)
+        predicted = torch.max(output,1)[1]
+        acc += (predicted == test_labels).sum()
+    print("Test accuracy:{:.3f}".format( float(acc) / (len(test_loader)*BATCH_SIZE)))
+
+
+
+
+File_NAME_list = ['b0','b2','c0', 'c1','b3','b4','b5','b6','b7','b8','b9','ba','bb','bc','bd','be','bf','b1','c2','c3','c4','c5','c6','c7','c8']
+#File_NAME_list = ['b2','c1','b3', 'b4', 'b5','b6', 'b7', 'b8', 'b9', 'ba', 'bb', 'bc', 'bd']
+
+#File_NAME_list = ['b0', 'b2', 'c0']
+label = []
+class_num = 0
+
+print(File_NAME_list)
+
+for File_NAME in File_NAME_list:
+    train, test, class_num, BATCH_SIZE, label = Dataset(File_NAME,label, class_num)          # label??
+
+    if File_NAME == 'b0':
+        train_ = train
+        test_ = test
+
+    else:
+        train_ += train
+        test_ += test
+    
+# data loader
+
+train_loader = torch.utils.data.DataLoader(train_, batch_size = BATCH_SIZE, shuffle = True)
+test_loader = torch.utils.data.DataLoader(test_, batch_size = BATCH_SIZE, shuffle = False)
+
+
+cnn = CNN2(class_num)
+if use_cuda:
+    cnn = cnn.cuda()
+print(cnn)
+
+
+
+fit(cnn,train_loader, class_num)
+DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")                                                                                           
+print("DEVICE = {}".format(DEVICE))                                                                                                                             
+criterion = nn.CrossEntropyLoss()                                                                                                                              
+    
+cnn.eval()                                                                                                                                                      
+acc = 0.                                                                                                                                                        
+with torch.no_grad():                                                                                                                                           
+    for idx, (images, labels) in enumerate(test_loader):                                                                                                        
+        x, y = images.to(DEVICE), labels.to(DEVICE) # (N, 1, 28, 28), (N, )                                                                                     
+        y_hat = cnn(x) # (N, 10)                                                                                                                                
+        loss = criterion(y_hat, y)                                                                                                                              
+        _, indices = torch.max(y_hat, dim=-1)                                                                                                                   
+        acc += torch.sum(indices == y).item()                                                                                                                   
+print('*'*20, 'Test', '*'*20)                                                                                                                                   
+print('Loss: {}, Accuracy: {} %'.format(loss.item(), acc/(len(test_loader)*BATCH_SIZE)))                                                                          
+print('*'*46)   
+    #test(cnn)
+#loss 0.09 이하로 내려가는 방법 찾기
+'''
+torch.save({
+#'epoch': EPOCHS,                                                                                                                                                                                     
+'model_state_dict': cnn.state_dict(),
+    'optimizer_state_dict': optimizer.state_dict(),
+    'loss': loss
+    }, "./model_save/model_HW_CNN2_.pth")
+'''
+
+
+
+def test(model):
+    acc = 0 
+    for test_imgs, test_labels in test_loader:
+        #print(test_imgs.shape)
+        test_imgs, test_labels = test_imgs.to(DEVICE), test_labels.to(DEVICE)
+        test_imgs = Variable(test_imgs).float()
+        #if use_cuda:
+        #    test_imgs, test_labels = test_imgs.cuda(), test_labels.cuda()
+        output = model(test_imgs)
+        predicted = torch.max(output,1)[1]
+        acc += (predicted == test_labels).sum()
+    print("Test accuracy:{:.3f}".format( float(acc) / (len(test_loader)*BATCH_SIZE)))
+
+
+'''
+def test(model, test_loader):
+    DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    print("DEVICE = {}".format(DEVICE))
+    criterion = nn.CrossEntropyLoss()
+
+
+    #model = TheModelClass(*args, **kwargs)                                                                              
+    #optimizer = TheOptimizerClass(*args, **kwargs)                                                                      
+    checkpoint = torch.load("./model_save/model_HW_CNN2.pth")
+    cnn.load_state_dict(checkpoint['model_state_dict'])
+    #optimizers.load_state_dict(checkpoint['optimizer_state_dict'])
+    #num_epochs = checkpoint['epoch']                                                                                    
+    loss = checkpoint['loss']
+
+    cnn.eval()
+    acc = 0.
+    with torch.no_grad():
+        for idx, (images, labels) in enumerate(test_loader):
+            x, y = images.to(DEVICE), labels.to(DEVICE) # (N, 1, 28, 28), (N, )
+            y_hat = cnn(x) # (N, 10)
+            loss = criterion(y_hat, y)
+            _, indices = torch.max(y_hat, dim=-1)
+            acc += torch.sum(indices == y).item()
+    print('*'*20, 'Test', '*'*20)
+    print('Loss: {}, Accuracy: {} %'.format(loss.item(), acc/len(test_loader)*BATCH_SIZE))
+    print('*'*46)
+'''
+
+#test(cnn, test_loader)
